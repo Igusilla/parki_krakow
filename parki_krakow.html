@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Krakowskie Parki</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['Playfair Display', 'serif'],
+          body: ['DM Sans', 'sans-serif'],
+        },
+        colors: {
+          forest: {
+            50:  '#f0fdf4',
+            100: '#dcfce7',
+            200: '#bbf7d0',
+            300: '#86efac',
+            400: '#4ade80',
+            500: '#22c55e',
+            600: '#16a34a',
+            700: '#15803d',
+            800: '#166534',
+            900: '#14532d',
+          },
+          bark: {
+            50:  '#faf6f1',
+            100: '#f0e8d8',
+            200: '#dfd0b4',
+            300: '#c9b08a',
+            400: '#b08d60',
+            500: '#9a7448',
+            600: '#845f3c',
+            700: '#6b4b31',
+            800: '#573d29',
+            900: '#473326',
+          }
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #0f1a12;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* MAP */
+  #map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  /* CUSTOM MARKERS */
+  .park-marker {
+    width: 32px;
+    height: 32px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255,255,255,0.9);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+  .park-marker.unvisited {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+  }
+  .park-marker.visited {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+  }
+  .park-marker-inner {
+    transform: rotate(45deg);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1;
+    text-align: center;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    letter-spacing: -0.3px;
+  }
+  .park-marker:hover { transform: rotate(-45deg) scale(1.15); }
+
+  /* LEAFLET POPUP */
+  .leaflet-popup-content-wrapper {
+    border-radius: 16px !important;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35) !important;
+    padding: 0 !important;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .leaflet-popup-content {
+    margin: 0 !important;
+    width: 300px !important;
+  }
+  .leaflet-popup-tip-container { display: none; }
+  .leaflet-popup-close-button {
+    top: 10px !important;
+    right: 10px !important;
+    color: white !important;
+    font-size: 20px !important;
+    z-index: 10;
+    background: rgba(0,0,0,0.2) !important;
+    border-radius: 50% !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 340px;
+    max-width: 90vw;
+    background: linear-gradient(180deg, #1a2e1e 0%, #0f1a12 100%);
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(34, 197, 94, 0.15);
+    box-shadow: 4px 0 40px rgba(0,0,0,0.5);
+  }
+  #sidebar.open {
+    transform: translateX(0);
+  }
+
+  #sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+    backdrop-filter: blur(2px);
+  }
+  #sidebar-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* PROGRESS WIDGET */
+  #progress-widget {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 900;
+    background: linear-gradient(135deg, #1a2e1e 0%, #0f2016 100%);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 16px;
+    padding: 12px 18px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+    backdrop-filter: blur(10px);
+    min-width: 170px;
+  }
+
+  /* BURGER BUTTON */
+  #burger-btn {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 1001;
+    width: 46px;
+    height: 46px;
+    background: linear-gradient(135deg, #1a2e1e, #0f2016);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    transition: all 0.2s ease;
+    color: #22c55e;
+    font-size: 18px;
+  }
+  #burger-btn:hover {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    border-color: transparent;
+    transform: scale(1.05);
+  }
+
+  /* PARK LIST */
+  .park-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    border: 1px solid transparent;
+    margin-bottom: 3px;
+  }
+  .park-list-item:hover {
+    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(34, 197, 94, 0.15);
+  }
+  .park-list-item.visited-item {
+    background: rgba(34, 197, 94, 0.06);
+  }
+  .park-num-badge {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .park-num-badge.unvisited { background: rgba(239,68,68,0.2); color: #f87171; }
+  .park-num-badge.visited   { background: rgba(34,197,94,0.2);  color: #4ade80; }
+
+  #search-input {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 10px;
+    color: #e2e8f0;
+    padding: 10px 14px 10px 38px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #search-input:focus {
+    border-color: rgba(34,197,94,0.5);
+    background: rgba(255,255,255,0.09);
+  }
+  #search-input::placeholder { color: rgba(156,163,175,0.6); }
+
+  /* PROGRESS BAR */
+  #progress-bar-fill {
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    background: linear-gradient(90deg, #22c55e, #86efac);
+    border-radius: 4px;
+  }
+
+  /* POPUP CONTENT */
+  .popup-header {
+    background: linear-gradient(135deg, #1a3a20 0%, #0f2016 100%);
+    padding: 20px 44px 16px 20px;
+    border-bottom: 1px solid rgba(34,197,94,0.15);
+  }
+  .popup-body {
+    background: #111d14;
+    padding: 16px 20px 20px;
+  }
+
+  /* Custom checkbox */
+  .custom-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    border: 2px solid rgba(34,197,94,0.4);
+    background: rgba(34,197,94,0.05);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .custom-checkbox:checked {
+    background: #22c55e;
+    border-color: #22c55e;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+  /* Date input */
+  input[type="date"] {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 8px;
+    color: #e2e8f0;
+    padding: 8px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    outline: none;
+    width: 100%;
+    color-scheme: dark;
+  }
+  input[type="date"]:focus {
+    border-color: rgba(34,197,94,0.5);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(34,197,94,0.3); border-radius: 4px; }
+
+  /* Map attribution */
+  .leaflet-control-attribution {
+    background: rgba(0,0,0,0.6) !important;
+    color: rgba(255,255,255,0.5) !important;
+    font-size: 10px !important;
+    backdrop-filter: blur(4px);
+  }
+  .leaflet-control-attribution a { color: rgba(34,197,94,0.8) !important; }
+
+  .leaflet-control-zoom {
+    border: 1px solid rgba(34,197,94,0.2) !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+  }
+  .leaflet-control-zoom a {
+    background: rgba(15,26,18,0.92) !important;
+    color: #4ade80 !important;
+    border-color: rgba(34,197,94,0.15) !important;
+    font-size: 18px !important;
+    line-height: 28px !important;
+    width: 30px !important;
+    height: 30px !important;
+  }
+  .leaflet-control-zoom a:hover {
+    background: rgba(34,197,94,0.2) !important;
+    color: #86efac !important;
+  }
+
+  @media (max-width: 640px) {
+    #progress-widget { top: 12px; right: 12px; min-width: 150px; padding: 10px 14px; }
+    #burger-btn { top: 12px; left: 12px; }
+    .leaflet-popup-content { width: 270px !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- SIDEBAR OVERLAY -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <!-- Header -->
+  <div style="padding: 24px 20px 16px; border-bottom: 1px solid rgba(34,197,94,0.12);">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+      <h1 style="font-family:'Playfair Display',serif; color:#4ade80; font-size:17px; line-height:1.2;">
+        Odkrywca<br>Krakowskich Parków
+      </h1>
+      <button onclick="closeSidebar()" style="color:rgba(156,163,175,0.7); background:none; border:none; cursor:pointer; font-size:20px; padding:4px; transition:color 0.2s;" onmouseover="this.style.color='#4ade80'" onmouseout="this.style.color='rgba(156,163,175,0.7)'">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <p style="color:rgba(156,163,175,0.6); font-size:12px; font-family:'DM Sans',sans-serif;">
+      <span id="sidebar-progress-text">0 / 78</span> parków odwiedzonych
+    </p>
+    <!-- Progress bar -->
+    <div style="margin-top:10px; background:rgba(255,255,255,0.06); border-radius:4px; height:4px; overflow:hidden;">
+      <div id="sidebar-bar-fill" style="height:4px; width:0%; background:linear-gradient(90deg,#22c55e,#86efac); border-radius:4px; transition:width 0.5s ease;"></div>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div style="padding: 14px 16px 10px; flex-shrink:0;">
+    <div style="position:relative;">
+      <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(34,197,94,0.5); font-size:13px;"></i>
+      <input id="search-input" type="text" placeholder="Szukaj parku..." oninput="filterParks(this.value)">
+    </div>
+  </div>
+
+  <!-- Filter tabs -->
+  <div style="padding: 0 16px 10px; display:flex; gap:6px; flex-shrink:0;">
+    <button onclick="setFilter('all')" id="filter-all" class="filter-btn active-filter" style="flex:1; padding:6px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(34,197,94,0.3); background:rgba(34,197,94,0.15); color:#4ade80; font-family:'DM Sans',sans-serif; transition:all 0.2s;">
+      Wszystkie
+    </button>
+    <button onclick="setFilter('visited')" id="filter-visited" class="filter-btn" style="flex:1; padding:6px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.04); color:rgba(156,163,175,0.7); font-family:'DM Sans',sans-serif; transition:all 0.2s;">
+      Odwiedzone
+    </button>
+    <button onclick="setFilter('unvisited')" id="filter-unvisited" class="filter-btn" style="flex:1; padding:6px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.04); color:rgba(156,163,175,0.7); font-family:'DM Sans',sans-serif; transition:all 0.2s;">
+      Do zdobycia
+    </button>
+  </div>
+
+  <!-- Park list -->
+  <div id="park-list" style="flex:1; overflow-y:auto; padding:0 8px 16px;">
+  </div>
+</div>
+
+<!-- BURGER BUTTON -->
+<button id="burger-btn" onclick="toggleSidebar()">
+  <i class="fa-solid fa-bars"></i>
+</button>
+
+<!-- PROGRESS WIDGET -->
+<div id="progress-widget">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,rgba(34,197,94,0.2),rgba(34,197,94,0.1));display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(34,197,94,0.25);">
+      <i class="fa-solid fa-trophy" style="color:#fbbf24;font-size:16px;"></i>
+    </div>
+    <div>
+      <div style="color:rgba(156,163,175,0.6);font-size:10px;font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:2px;">Postęp</div>
+      <div id="progress-count" style="color:#4ade80;font-size:18px;font-weight:700;font-family:'Playfair Display',serif;line-height:1;">0 <span style="color:rgba(156,163,175,0.5);font-size:13px;font-family:'DM Sans',sans-serif;font-weight:400;">/ 78</span></div>
+    </div>
+  </div>
+  <!-- Mini progress bar -->
+  <div style="margin-top:10px;background:rgba(255,255,255,0.07);border-radius:4px;height:4px;overflow:hidden;">
+    <div id="progress-bar-fill" style="height:4px;width:0%;"></div>
+  </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// =====================================================
+//  PARKS DATA
+// =====================================================
+const PARKS = [
+  { id:  1, name: "Park im. Wisławy Szymborskiej",   loc: "ul. Karmelicka",                          lat: 50.0616, lng: 19.9329 },
+  { id:  2, name: "Planty Krakowskie",                loc: "Stare Miasto",                             lat: 50.0617, lng: 19.9386 },
+  { id:  3, name: "Park Jalu Kurka",                  loc: "ul. Szlak",                                lat: 50.0672, lng: 19.9418 },
+  { id:  4, name: "Bulwary Wisły",                    loc: "",                                          lat: 50.0551, lng: 19.9480 },
+  { id:  5, name: "Park Grzegórzecki",               loc: "ul. Zieleniewskiego",                      lat: 50.0617, lng: 19.9534 },
+  { id:  6, name: "Park Dąbie",                      loc: "al. Pokoju",                               lat: 50.0703, lng: 19.9800 },
+  { id:  7, name: "Park Strzelecki",                  loc: "ul. Topolowa",                             lat: 50.0580, lng: 19.9568 },
+  { id:  8, name: "Park Kolejowy",                    loc: "ul. Blich",                                lat: 50.0641, lng: 19.9461 },
+  { id:  9, name: "Park Ogród nad Sudołem",           loc: "ul. Naczelna",                             lat: 50.0869, lng: 19.9510 },
+  { id: 10, name: "Park Rzeczny Białucha",            loc: "",                                          lat: 50.0810, lng: 19.9582 },
+  { id: 11, name: "Park Reduta",                      loc: "Prądnik Czerwony",                         lat: 50.0793, lng: 19.9670 },
+  { id: 12, name: "Park Zaczarowanej Dorożki",       loc: "ul. Dobrego Pasterza",                    lat: 50.0762, lng: 19.9718 },
+  { id: 13, name: "Park im. Stanisława Wyspiańskiego", loc: "ul. Makowskiego",                        lat: 50.0698, lng: 19.9832 },
+  { id: 14, name: "Park im. Tadeusza Kościuszki",   loc: "ul. Białoprądnicka",                      lat: 50.0814, lng: 19.9453 },
+  { id: 15, name: "Park Krowoderski",                 loc: "ul. Palacha",                              lat: 50.0750, lng: 19.9280 },
+  { id: 16, name: "Park Łagiewnicki",                loc: "ul. Millana",                              lat: 50.0105, lng: 19.9315 },
+  { id: 17, name: "Park Solvay",                     loc: "ul. Zakopiańska",                          lat: 50.0182, lng: 19.9202 },
+  { id: 18, name: "Park Rzeczny Wilga",               loc: "",                                          lat: 50.0320, lng: 19.9530 },
+  { id: 19, name: "Park im. Henryka Jordana",        loc: "al. 3 Maja",                               lat: 50.0651, lng: 19.9249 },
+  { id: 20, name: "Park Kleparski",                   loc: "ul. Prądnicka",                            lat: 50.0680, lng: 19.9360 },
+  { id: 21, name: "Park Ogród Łobzów",              loc: "ul. Podchorążych",                         lat: 50.0713, lng: 19.9172 },
+  { id: 22, name: "Park przy ul. Łokietka",         loc: "",                                          lat: 50.0698, lng: 19.9138 },
+  { id: 23, name: "Park Krakowski im. M. Grechuty",  loc: "",                                          lat: 50.0581, lng: 19.9263 },
+  { id: 24, name: "Park św. Wincentego a'Paulo",    loc: "ul. Lea",                                  lat: 50.0649, lng: 19.9132 },
+  { id: 25, name: "Park przy Forcie Bronowice",      loc: "ul. Zarzecze",                             lat: 50.0729, lng: 19.8910 },
+  { id: 26, name: "Park przy ul. Radzikowskiego",    loc: "",                                          lat: 50.0670, lng: 19.8980 },
+  { id: 27, name: "Park Rzeczny im. Tetmajera",      loc: "Bronowice",                                lat: 50.0793, lng: 19.8790 },
+  { id: 28, name: "Park Młynówka Królewska",        loc: "",                                          lat: 50.0743, lng: 19.9085 },
+  { id: 29, name: "Błonia Krakowskie",              loc: "al. Focha",                                lat: 50.0601, lng: 19.9102 },
+  { id: 30, name: "Park Decjusza",                   loc: "ul. Królowej Jadwigi",                     lat: 50.0667, lng: 19.8752 },
+  { id: 31, name: "Park Rzeczny Rudawa",              loc: "",                                          lat: 50.0720, lng: 19.8630 },
+  { id: 32, name: "Park linearny Ruczaj",             loc: "ul. Szuwarowa",                            lat: 50.0329, lng: 19.9032 },
+  { id: 33, name: "Park Dębnicki",                  loc: "ul. Praska",                               lat: 50.0481, lng: 19.9170 },
+  { id: 34, name: "Park Pychowicki",                  loc: "ul. Sodowa",                               lat: 50.0253, lng: 19.9040 },
+  { id: 35, name: "Park Zakrzówek",                  loc: "ul. Twardowskiego",                        lat: 50.0421, lng: 19.9062 },
+  { id: 36, name: "Park Maćka i Doroty",            loc: "ul. Narwika",                              lat: 50.0394, lng: 19.9138 },
+  { id: 37, name: "Park przy Forcie Borek",          loc: "ul. Forteczna",                            lat: 50.0284, lng: 19.8950 },
+  { id: 38, name: "Park Duchacki",                   loc: "ul. Jakobiny",                             lat: 50.0212, lng: 19.9748 },
+  { id: 39, name: "Park Kurdwanów",                 loc: "ul. Stojałowskiego",                      lat: 50.0142, lng: 19.9810 },
+  { id: 40, name: "Park Rzeczny Drwinka",             loc: "",                                          lat: 50.0070, lng: 19.9850 },
+  { id: 41, name: "Park Złocień",                   loc: "ul. Agatowa",                              lat: 50.0115, lng: 19.9520 },
+  { id: 42, name: "Park im. Jerzmanowskich",         loc: "Prokocim",                                 lat: 50.0165, lng: 20.0020 },
+  { id: 43, name: "Park przy Dworze Czeczów",        loc: "Bieżanów",                                lat: 50.0095, lng: 20.0210 },
+  { id: 44, name: "Park Rżąka",                     loc: "ul. Rydygiera",                            lat: 50.0052, lng: 20.0350 },
+  { id: 45, name: "Park Aleksandry",                 loc: "Bieżanów",                                lat: 50.0130, lng: 20.0450 },
+  { id: 46, name: "Park Lilli Wenedy",               loc: "",                                          lat: 50.0068, lng: 20.0560 },
+  { id: 47, name: "Park Aleksandry Północ",         loc: "",                                          lat: 50.0180, lng: 20.0480 },
+  { id: 48, name: "Park im. Wojciecha Bednarskiego", loc: "Podgórze",                                 lat: 50.0430, lng: 19.9530 },
+  { id: 49, name: "Park Rzeczny Ogród Płaszów",     loc: "ul. Gumniska",                             lat: 50.0345, lng: 19.9740 },
+  { id: 50, name: "Park Stacja Wisła",               loc: "Zabłocie",                                lat: 50.0493, lng: 19.9578 },
+  { id: 51, name: "Park Staw Płaszowski",           loc: "ul. Wodna",                                lat: 50.0289, lng: 19.9943 },
+  { id: 52, name: "Planty im. Floriana Nowackiego",  loc: "Podgórze",                                 lat: 50.0458, lng: 19.9463 },
+  { id: 53, name: "Park Miejski Bagry Wielkie",      loc: "",                                          lat: 50.0252, lng: 20.0190 },
+  { id: 54, name: "Park Czyżyny",                   loc: "ul. Stella-Sawickiego",                    lat: 50.0742, lng: 20.0190 },
+  { id: 55, name: "Park Lotników Polskich",          loc: "Czyżyny",                                 lat: 50.0790, lng: 20.0290 },
+  { id: 56, name: "Park Woźniców",                 loc: "Czyżyny",                                 lat: 50.0698, lng: 20.0350 },
+  { id: 57, name: "Park pil. gen. S. Skalskiego",   loc: "os. Dywizjonu 303",                       lat: 50.0832, lng: 20.0450 },
+  { id: 58, name: "Fort Batowice",                   loc: "os. Złotego Wieku",                       lat: 50.0903, lng: 20.0380 },
+  { id: 59, name: "Park Tysiąclecia",              loc: "os. Tysiąclecia Mistrzejowice",            lat: 50.0938, lng: 20.0010 },
+  { id: 60, name: "Planty Mistrzejowickie",          loc: "os. Tysiąclecia",                          lat: 50.0913, lng: 19.9952 },
+  { id: 61, name: "Fort Mistrzejowice",              loc: "os. Piastów",                              lat: 50.0960, lng: 19.9873 },
+  { id: 62, name: "Park Zalew Nowohucki",            loc: "ul. Bulwarowa",                            lat: 50.0820, lng: 20.0720 },
+  { id: 63, name: "Planty Bieńczyckie",             loc: "os. Kazimierzowskie",                      lat: 50.0892, lng: 20.0580 },
+  { id: 64, name: "Park Łuczanowice",               loc: "ul. Mycielskiego",                         lat: 50.0970, lng: 20.1120 },
+  { id: 65, name: "Park Jana Matejki",               loc: "ul. Wańkowicza Nowa Huta",                lat: 50.0750, lng: 20.1010 },
+  { id: 66, name: "Park Wadów",                     loc: "ul. Glinik",                               lat: 50.0672, lng: 20.1180 },
+  { id: 67, name: "Park Zielony Jar Wandy",          loc: "os. Na Stoku",                             lat: 50.0620, lng: 20.0990 },
+  { id: 68, name: "Park Węgrzynowice",              loc: "ul. Węgrzynowicka",                       lat: 50.0448, lng: 20.1280 },
+  { id: 69, name: "Park im. Stefana Żeromskiego",  loc: "os. Na Skarpie",                           lat: 50.0810, lng: 20.0860 },
+  { id: 70, name: "Park Klasztorna",                 loc: "Mogiła",                                   lat: 50.0680, lng: 20.1350 },
+  { id: 71, name: "Park Kultury",                    loc: "al. Jana Pawła II 232 Nowa Huta",          lat: 50.0702, lng: 20.0680 },
+  { id: 72, name: "Park Ratuszowy",                  loc: "os. Zgody",                                lat: 50.0739, lng: 20.0796 },
+  { id: 73, name: "Park Szwedzki",                   loc: "os. Szklane Domy Nowa Huta",              lat: 50.0658, lng: 20.0780 },
+  { id: 74, name: "Park Wiśniowy Sad",              loc: "os. Kolorowe",                             lat: 50.0581, lng: 20.0680 },
+  { id: 75, name: "Park Przylasek Wyciąski",        loc: "",                                          lat: 50.0402, lng: 20.1450 },
+  { id: 76, name: "Park Przylasek Rusiecki",         loc: "",                                          lat: 50.0312, lng: 20.1380 },
+  { id: 77, name: "Park Fort 2 Kościuszko",         loc: "al. Waszyngtona",                          lat: 50.0562, lng: 19.8820 },
+  { id: 78, name: "Park Kurczaba",                   loc: "Prokocim",                                 lat: 50.0055, lng: 20.0120 },
+];
+
+// =====================================================
+//  STATE
+// =====================================================
+let visitedState = {};  // { id: { visited: bool, date: string } }
+let currentFilter = 'all';
+let searchQuery = '';
+let mapMarkers = {};
+let activePopupId = null;
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem('krakow_parks_v2');
+    if (saved) visitedState = JSON.parse(saved);
+  } catch(e) { visitedState = {}; }
+}
+
+function saveState() {
+  localStorage.setItem('krakow_parks_v2', JSON.stringify(visitedState));
+}
+
+function getParkState(id) {
+  return visitedState[id] || { visited: false, date: '' };
+}
+
+function getVisitedCount() {
+  return PARKS.filter(p => getParkState(p.id).visited).length;
+}
+
+// =====================================================
+//  MAP SETUP
+// =====================================================
+loadState();
+
+const map = L.map('map', {
+  center: [50.0614, 19.9366],
+  zoom: 12,
+  zoomControl: true,
+  attributionControl: true
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19
+}).addTo(map);
+
+// Reposition zoom control
+map.zoomControl.setPosition('bottomright');
+
+// =====================================================
+//  CUSTOM ICON
+// =====================================================
+function createMarkerIcon(park) {
+  const state = getParkState(park.id);
+  const cls = state.visited ? 'visited' : 'unvisited';
+  const num = park.id < 10 ? park.id : (park.id < 100 ? park.id : park.id);
+  const fontSize = park.id >= 10 ? '8px' : '9px';
+  return L.divIcon({
+    className: '',
+    html: `<div class="park-marker ${cls}"><span class="park-marker-inner" style="font-size:${fontSize}">${park.id}</span></div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -34]
+  });
+}
+
+// =====================================================
+//  POPUP BUILDER
+// =====================================================
+function buildPopupHTML(park) {
+  const state = getParkState(park.id);
+  const isVisited = state.visited;
+  const dateVal = state.date || '';
+  const gmapsName = park.loc ? `${park.name} ${park.loc}, Kraków, Polska` : `${park.name}, Kraków, Polska`;
+  const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(gmapsName)}`;
+
+  return `
+  <div>
+    <div class="popup-header">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:34px;height:34px;border-radius:10px;background:${isVisited ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.15)'};display:flex;align-items:center;justify-content:center;border:1px solid ${isVisited ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'};flex-shrink:0;">
+          <span style="color:${isVisited ? '#4ade80' : '#f87171'};font-weight:700;font-size:12px;font-family:'DM Sans',sans-serif;">${park.id}</span>
+        </div>
+        <div>
+          <div style="color:rgba(156,163,175,0.5);font-size:10px;text-transform:uppercase;letter-spacing:0.8px;font-family:'DM Sans',sans-serif;">Park #${park.id}</div>
+          <div style="color:#e2e8f0;font-family:'Playfair Display',serif;font-size:14px;font-weight:600;line-height:1.2;margin-top:1px;">${park.name}</div>
+        </div>
+      </div>
+      ${park.loc ? `<div style="color:rgba(156,163,175,0.5);font-size:11px;display:flex;align-items:center;gap:5px;margin-top:2px;"><i class="fa-solid fa-location-dot" style="color:rgba(34,197,94,0.5);font-size:10px;"></i>${park.loc}</div>` : ''}
+    </div>
+
+    <div class="popup-body">
+      <!-- Visited checkbox -->
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);margin-bottom:12px;">
+        <input type="checkbox" class="custom-checkbox" id="chk-${park.id}" ${isVisited ? 'checked' : ''} onchange="toggleVisited(${park.id}, this.checked)">
+        <span style="color:#e2e8f0;font-size:14px;font-family:'DM Sans',sans-serif;font-weight:500;">Odwiedzone</span>
+        ${isVisited ? `<span style="margin-left:auto;background:rgba(34,197,94,0.15);color:#4ade80;font-size:10px;padding:2px 8px;border-radius:20px;font-family:'DM Sans',sans-serif;font-weight:600;border:1px solid rgba(34,197,94,0.25);">✓ Zaliczone</span>` : ''}
+      </label>
+
+      <!-- Date picker -->
+      <div id="date-row-${park.id}" style="margin-bottom:14px;${isVisited ? '' : 'display:none;'}">
+        <label style="color:rgba(156,163,175,0.6);font-size:11px;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.6px;font-family:'DM Sans',sans-serif;">
+          <i class="fa-regular fa-calendar" style="margin-right:4px;color:rgba(34,197,94,0.5);"></i>Data wizyty
+        </label>
+        <input type="date" id="date-${park.id}" value="${dateVal}" onchange="setDate(${park.id}, this.value)" max="${new Date().toISOString().split('T')[0]}">
+      </div>
+
+      <!-- Navigate button -->
+      <a href="${gmapsUrl}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#22c55e,#16a34a);color:white;padding:10px 16px;border-radius:10px;text-decoration:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;transition:opacity 0.2s;box-shadow:0 4px 12px rgba(34,197,94,0.25);" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+        <i class="fa-solid fa-route"></i>
+        Wyznacz trasę (Google Maps)
+      </a>
+    </div>
+  </div>`;
+}
+
+// =====================================================
+//  TOGGLE VISITED
+// =====================================================
+function toggleVisited(id, checked) {
+  if (!visitedState[id]) visitedState[id] = {};
+  visitedState[id].visited = checked;
+  if (!checked) visitedState[id].date = '';
+
+  saveState();
+  updateMarker(id);
+  updateProgress();
+  renderParkList();
+
+  // Update popup DOM without closing
+  const dateRow = document.getElementById(`date-row-${id}`);
+  if (dateRow) dateRow.style.display = checked ? '' : 'none';
+  if (!checked) {
+    const di = document.getElementById(`date-${id}`);
+    if (di) di.value = '';
+  }
+}
+
+function setDate(id, val) {
+  if (!visitedState[id]) visitedState[id] = {};
+  visitedState[id].date = val;
+  saveState();
+  renderParkList();
+}
+
+// =====================================================
+//  MARKER MANAGEMENT
+// =====================================================
+function updateMarker(id) {
+  const park = PARKS.find(p => p.id === id);
+  if (!park || !mapMarkers[id]) return;
+  mapMarkers[id].setIcon(createMarkerIcon(park));
+}
+
+function initMarkers() {
+  PARKS.forEach(park => {
+    const marker = L.marker([park.lat, park.lng], {
+      icon: createMarkerIcon(park),
+      title: park.name
+    }).addTo(map);
+
+    marker.bindPopup(buildPopupHTML(park), {
+      maxWidth: 320,
+      minWidth: 300
+    });
+
+    marker.on('popupopen', () => {
+      activePopupId = park.id;
+      // Rebuild popup to ensure fresh state
+      marker.setPopupContent(buildPopupHTML(park));
+    });
+
+    marker.on('popupclose', () => {
+      if (activePopupId === park.id) activePopupId = null;
+    });
+
+    mapMarkers[park.id] = marker;
+  });
+}
+
+// =====================================================
+//  PROGRESS UPDATE
+// =====================================================
+function updateProgress() {
+  const count = getVisitedCount();
+  const pct = (count / 78) * 100;
+
+  document.getElementById('progress-count').innerHTML =
+    `${count} <span style="color:rgba(156,163,175,0.5);font-size:13px;font-family:'DM Sans',sans-serif;font-weight:400;">/ 78</span>`;
+  document.getElementById('progress-bar-fill').style.width = pct + '%';
+
+  document.getElementById('sidebar-progress-text').textContent = `${count} / 78`;
+  document.getElementById('sidebar-bar-fill').style.width = pct + '%';
+}
+
+// =====================================================
+//  SIDEBAR
+// =====================================================
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (sb.classList.contains('open')) {
+    closeSidebar();
+  } else {
+    sb.classList.add('open');
+    ov.classList.add('active');
+    document.getElementById('burger-btn').innerHTML = '<i class="fa-solid fa-xmark"></i>';
+  }
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('active');
+  document.getElementById('burger-btn').innerHTML = '<i class="fa-solid fa-bars"></i>';
+}
+
+// =====================================================
+//  PARK LIST RENDERING
+// =====================================================
+function filterParks(q) {
+  searchQuery = q.toLowerCase();
+  renderParkList();
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.style.background = 'rgba(255,255,255,0.04)';
+    btn.style.borderColor = 'rgba(255,255,255,0.08)';
+    btn.style.color = 'rgba(156,163,175,0.7)';
+  });
+  const active = document.getElementById(`filter-${f}`);
+  active.style.background = 'rgba(34,197,94,0.15)';
+  active.style.borderColor = 'rgba(34,197,94,0.3)';
+  active.style.color = '#4ade80';
+  renderParkList();
+}
+
+function renderParkList() {
+  const container = document.getElementById('park-list');
+  const filtered = PARKS.filter(park => {
+    const state = getParkState(park.id);
+    const matchSearch = searchQuery === '' ||
+      park.name.toLowerCase().includes(searchQuery) ||
+      String(park.id).includes(searchQuery) ||
+      (park.loc && park.loc.toLowerCase().includes(searchQuery));
+    const matchFilter =
+      currentFilter === 'all' ||
+      (currentFilter === 'visited' && state.visited) ||
+      (currentFilter === 'unvisited' && !state.visited);
+    return matchSearch && matchFilter;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:32px 16px;color:rgba(156,163,175,0.4);font-family:'DM Sans',sans-serif;font-size:13px;">
+      <i class="fa-solid fa-leaf" style="font-size:24px;margin-bottom:8px;display:block;color:rgba(34,197,94,0.2);"></i>
+      Brak wyników
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(park => {
+    const state = getParkState(park.id);
+    const isV = state.visited;
+    const dateStr = isV && state.date
+      ? `<span style="color:rgba(156,163,175,0.45);font-size:10px;display:block;margin-top:1px;font-family:'DM Sans',sans-serif;">${formatDate(state.date)}</span>`
+      : '';
+    return `
+    <div class="park-list-item ${isV ? 'visited-item' : ''}" onclick="focusPark(${park.id})">
+      <div class="park-num-badge ${isV ? 'visited' : 'unvisited'}">${park.id}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="color:${isV ? '#e2e8f0' : 'rgba(226,232,240,0.8)'};font-size:12.5px;font-family:'DM Sans',sans-serif;font-weight:${isV ? '500' : '400'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${park.name}</div>
+        ${dateStr}
+      </div>
+      ${isV ? `<i class="fa-solid fa-check-circle" style="color:#22c55e;font-size:14px;flex-shrink:0;"></i>` : `<i class="fa-regular fa-circle" style="color:rgba(156,163,175,0.2);font-size:14px;flex-shrink:0;"></i>`}
+    </div>`;
+  }).join('');
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  try {
+    const [y, m, day] = d.split('-');
+    const months = ['sty','lut','mar','kwi','maj','cze','lip','sie','wrz','paź','lis','gru'];
+    return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`;
+  } catch(e) { return d; }
+}
+
+function focusPark(id) {
+  const park = PARKS.find(p => p.id === id);
+  if (!park) return;
+  map.setView([park.lat, park.lng], 16, { animate: true, duration: 0.8 });
+  // Close sidebar on mobile
+  if (window.innerWidth < 900) closeSidebar();
+  setTimeout(() => {
+    if (mapMarkers[id]) {
+      mapMarkers[id].openPopup();
+    }
+  }, 600);
+}
+
+// =====================================================
+//  INIT
+// =====================================================
+initMarkers();
+updateProgress();
+renderParkList();
+
+// Welcome animation
+setTimeout(() => {
+  document.getElementById('progress-widget').style.animation = 'none';
+}, 100);
+
+</script>
+</body>
+</html>
